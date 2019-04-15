@@ -1,10 +1,9 @@
-@file:JvmName("KotlinxSerializationMessageBodyReader")
-
 package com.jakewharton.rs.kotlinx.serialization
 
-import org.glassfish.jersey.client.ClientConfig
+import org.glassfish.jersey.client.JerseyClientBuilder
 import org.glassfish.jersey.netty.httpserver.NettyHttpContainerProvider
 import org.glassfish.jersey.server.ResourceConfig
+import org.jboss.resteasy.client.jaxrs.internal.ResteasyClientBuilderImpl
 import org.jboss.resteasy.plugins.server.netty.NettyJaxrsServer
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -12,7 +11,6 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
-import org.junit.Ignore
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.junit.runners.Parameterized
@@ -32,7 +30,9 @@ class KotlinxSerializationMessageBodyITTest(
         private val provider: Provider,
         private val mediaType: MediaType) {
 
-    private val client = ClientBuilder.newClient(ClientConfig(*serializers))
+    private val client = provider.clientBuilder()
+            .apply { serializers.forEach { register(it) } }
+            .build()
 
     private val port = ServerSocket(0).apply { close() }.localPort
 
@@ -66,7 +66,7 @@ class KotlinxSerializationMessageBodyITTest(
         val response = client.target(resourceUri.path("unknown/api"))
                 .execute(assureOk = false, accept = mediaType)
 
-        assertEquals(Response.Status.NOT_FOUND, response.statusInfo)
+        assertEquals(Response.Status.NOT_FOUND.statusCode, response.status)
         assertEquals(Response.Status.NOT_FOUND.statusCode, response.entity<ErrorMessage>().errorCode)
     }
 
@@ -75,7 +75,7 @@ class KotlinxSerializationMessageBodyITTest(
         val response = client.target(resourceUri)
                 .execute(assureOk = false, accept = MediaType.APPLICATION_OCTET_STREAM_TYPE)
 
-        assertEquals(Response.Status.NOT_ACCEPTABLE, response.statusInfo)
+        assertEquals(Response.Status.NOT_ACCEPTABLE.statusCode, response.status)
         assertFalse(response.hasEntity())
         assertNotEquals(mediaType, response.mediaType)
     }
@@ -85,7 +85,7 @@ class KotlinxSerializationMessageBodyITTest(
         val response = client.target(resourceUri.path("fail"))
                 .execute(assureOk = false, accept = mediaType)
 
-        assertEquals(Response.Status.INTERNAL_SERVER_ERROR, response.statusInfo)
+        assertEquals(Response.Status.INTERNAL_SERVER_ERROR.statusCode, response.status)
         assertEquals(Response.Status.INTERNAL_SERVER_ERROR.statusCode, response.entity<ErrorMessage>().errorCode)
     }
 
@@ -113,24 +113,34 @@ class KotlinxSerializationMessageBodyITTest(
     enum class Provider {
 
         JERSEY {
+
             override fun start(port: Int): () -> Unit = NettyHttpContainerProvider
                     .createHttp2Server(
                             URI.create("http://localhost:$port/"),
                             ResourceConfig.forApplication(TestApp()),
                             null)
                     .let { { it.close().await() } }
+
+            override fun clientBuilder() = JerseyClientBuilder()
+
         },
 
         RESTEASY {
+
             override fun start(port: Int) = NettyJaxrsServer()
                     .apply {
                         deployment.application = TestApp()
                         this.port = port
                         start()
                     }::stop
+
+            override fun clientBuilder() = ResteasyClientBuilderImpl()
+
         };
 
         abstract fun start(port: Int): () -> Unit
+
+        abstract fun clientBuilder(): ClientBuilder
 
         override fun toString() = name.toLowerCase()
 

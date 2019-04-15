@@ -1,10 +1,10 @@
 package com.jakewharton.rs.kotlinx.serialization
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.cbor.Cbor
 import kotlinx.serialization.json.Json
-import org.jboss.resteasy.core.NoMessageBodyWriterFoundFailure
 import java.lang.UnsupportedOperationException
-import javax.ws.rs.ApplicationPath
+import javax.ws.rs.Consumes
 import javax.ws.rs.GET
 import javax.ws.rs.NotAcceptableException
 import javax.ws.rs.Path
@@ -18,22 +18,28 @@ import javax.ws.rs.core.Response
 import javax.ws.rs.ext.ExceptionMapper
 import javax.ws.rs.ext.Provider
 
-val jsonMessageBodyReader = Json.asMessageBodyReader(MediaType.APPLICATION_JSON_TYPE)
+const val MEDIA_TYPE_APPLICATION_CBOR = "application/cbor"
+val MEDIA_TYPE_APPLICATION_CBOR_TYPE: MediaType = MediaType.valueOf(MEDIA_TYPE_APPLICATION_CBOR)
 
-val jsonMessageBodyWriter = Json.asMessageBodyWriter(MediaType.APPLICATION_JSON_TYPE)
+val serializers = arrayOf(
+        Json.asMessageBodyReader(MediaType.APPLICATION_JSON_TYPE),
+        Json.asMessageBodyWriter(MediaType.APPLICATION_JSON_TYPE),
+        Cbor.asMessageBodyReader(MEDIA_TYPE_APPLICATION_CBOR_TYPE),
+        Cbor.asMessageBodyWriter(MEDIA_TYPE_APPLICATION_CBOR_TYPE))
 
 val testUsersList = listOf(User(1, "John"), User(2, "Mary"))
 
 class TestApp : Application() {
 
-    override fun getSingletons() = setOf(jsonMessageBodyReader, jsonMessageBodyWriter)
+    override fun getSingletons() = setOf(*serializers)
 
     override fun getClasses() = setOf(TestResource::class.java, ErrorMapper::class.java)
 
 }
 
 @Path("users")
-@Produces(MediaType.APPLICATION_JSON)
+@Consumes(MediaType.APPLICATION_JSON, MEDIA_TYPE_APPLICATION_CBOR)
+@Produces(MediaType.APPLICATION_JSON, MEDIA_TYPE_APPLICATION_CBOR)
 class TestResource {
 
     @GET
@@ -50,12 +56,12 @@ class TestResource {
 }
 
 @Provider
-@Produces(MediaType.APPLICATION_JSON)
+@Produces(MediaType.APPLICATION_JSON, MEDIA_TYPE_APPLICATION_CBOR)
 class ErrorMapper : ExceptionMapper<Exception> {
 
     override fun toResponse(exception: Exception): Response = when (exception) {
         is NotAcceptableException -> exception.response
-        is WebApplicationException -> Response.fromResponse(exception.response)
+        is WebApplicationException -> Response.status(exception.response.statusInfo)
                 .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON)
                 .entity(ErrorMessage(exception.response.status, exception.localizedMessage))
                 .build()

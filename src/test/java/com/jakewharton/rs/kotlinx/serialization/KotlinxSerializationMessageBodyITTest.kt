@@ -2,11 +2,9 @@
 
 package com.jakewharton.rs.kotlinx.serialization
 
-import org.glassfish.hk2.utilities.binding.AbstractBinder
 import org.glassfish.jersey.client.ClientConfig
 import org.glassfish.jersey.netty.httpserver.NettyHttpContainerProvider
 import org.glassfish.jersey.server.ResourceConfig
-import org.jboss.resteasy.core.NoMessageBodyWriterFoundFailure
 import org.jboss.resteasy.plugins.server.netty.NettyJaxrsServer
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -14,11 +12,10 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
+import org.junit.Ignore
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.junit.runners.Parameterized
-import java.lang.IllegalStateException
-import java.lang.RuntimeException
 import java.net.ServerSocket
 import java.net.URI
 import javax.ws.rs.client.ClientBuilder
@@ -28,13 +25,14 @@ import javax.ws.rs.core.Response
 import javax.ws.rs.core.UriBuilder
 
 /**
- * This test cover Serialization/Deserialization from both sides, by raising up a local JAX-RS server (which encodes JSON),
- * and consuming some APIs with a client (by decoding JSON).
+ * This test cover Serialization/Deserialization from both sides, by raising up a local JAX-RS server
  */
 @RunWith(Parameterized::class)
-class KotlinxSerializationMessageBodyITTest(private val provider: Provider) {
+class KotlinxSerializationMessageBodyITTest(
+        private val provider: Provider,
+        private val mediaType: MediaType) {
 
-    private val client = ClientBuilder.newClient(ClientConfig(jsonMessageBodyReader, jsonMessageBodyWriter))
+    private val client = ClientBuilder.newClient(ClientConfig(*serializers))
 
     private val port = ServerSocket(0).apply { close() }.localPort
 
@@ -48,7 +46,8 @@ class KotlinxSerializationMessageBodyITTest(private val provider: Provider) {
     fun testGetById() {
         val targetUser = testUsersList.first()
 
-        val response: User? = client.target(resourceUri.path(targetUser.id.toString())).execute().entity()
+        val response: User? = client.target(resourceUri.path(targetUser.id.toString()))
+                .execute(accept = mediaType).entity()
 
         assertEquals(targetUser, response)
         assertTrue(targetUser !== response)
@@ -56,7 +55,8 @@ class KotlinxSerializationMessageBodyITTest(private val provider: Provider) {
 
     @Test
     fun testList() {
-        val response: Array<User> = client.target(resourceUri).execute().entity()
+        val response: Array<User> = client.target(resourceUri)
+                .execute(accept = mediaType).entity()
 
         assertEquals(testUsersList, response.toList())
     }
@@ -64,7 +64,7 @@ class KotlinxSerializationMessageBodyITTest(private val provider: Provider) {
     @Test
     fun testNotFound() {
         val response = client.target(resourceUri.path("unknown/api"))
-                .execute(assureOk = false)
+                .execute(assureOk = false, accept = mediaType)
 
         assertEquals(Response.Status.NOT_FOUND, response.statusInfo)
         assertEquals(Response.Status.NOT_FOUND.statusCode, response.entity<ErrorMessage>().errorCode)
@@ -77,13 +77,13 @@ class KotlinxSerializationMessageBodyITTest(private val provider: Provider) {
 
         assertEquals(Response.Status.NOT_ACCEPTABLE, response.statusInfo)
         assertFalse(response.hasEntity())
-        assertNotEquals(MediaType.APPLICATION_JSON, response.mediaType)
+        assertNotEquals(mediaType, response.mediaType)
     }
 
     @Test
     fun testExceptionThrown() {
         val response = client.target(resourceUri.path("fail"))
-                .execute(assureOk = false)
+                .execute(assureOk = false, accept = mediaType)
 
         assertEquals(Response.Status.INTERNAL_SERVER_ERROR, response.statusInfo)
         assertEquals(Response.Status.INTERNAL_SERVER_ERROR.statusCode, response.entity<ErrorMessage>().errorCode)
@@ -104,10 +104,9 @@ class KotlinxSerializationMessageBodyITTest(private val provider: Provider) {
     companion object {
 
         @JvmStatic
-        @Parameterized.Parameters(name = "{0}")
-        fun data() = Provider.values().map {
-            arrayOf(it)
-        }
+        @Parameterized.Parameters(name = "{0}, {1}")
+        fun data() = listOf(MediaType.APPLICATION_JSON_TYPE, MEDIA_TYPE_APPLICATION_CBOR_TYPE)
+                .flatMap { mediaType -> Provider.values().map { arrayOf(it, mediaType) } }
 
     }
 
@@ -137,9 +136,7 @@ class KotlinxSerializationMessageBodyITTest(private val provider: Provider) {
 
     }
 
-    private fun WebTarget.execute(
-            assureOk: Boolean = true,
-            accept: MediaType = MediaType.APPLICATION_JSON_TYPE) = request()
+    private fun WebTarget.execute(assureOk: Boolean = true, accept: MediaType) = request()
             .accept(accept)
             .buildGet()
             .invoke()

@@ -13,6 +13,7 @@ buildscript {
 apply plugin: 'java-library'
 apply plugin: 'org.jetbrains.kotlin.jvm'
 apply plugin: 'kotlinx-serialization'
+apply plugin: 'jacoco'
 
 sourceCompatibility = JavaVersion.VERSION_1_8
 targetCompatibility = JavaVersion.VERSION_1_8
@@ -30,6 +31,18 @@ dependencies {
   testImplementation 'org.jboss.resteasy:resteasy-netty4:4.0.0.CR2'
   testImplementation 'org.glassfish.jersey.containers:jersey-container-netty-http:2.28'
   testImplementation 'org.glassfish.jersey.inject:jersey-hk2:2.28'
+}
+
+jacoco {
+  toolVersion = '0.8.3'
+}
+
+tasks.withType(JacocoReport.class) {
+  reports {
+    xml.enabled = true
+    html.enabled = true
+  }
+  check.dependsOn(it)
 }
 
 group = GROUP
